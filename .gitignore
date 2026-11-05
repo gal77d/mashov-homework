@@ -1,0 +1,4 @@
+.env
+out/
+pending.json
+__pycache__/

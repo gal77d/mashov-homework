@@ -1,0 +1,63 @@
+name: בדיקת שיעורי בית
+
+on:
+  schedule:
+    # כל 30 דקות בין 12:00 ל-23:30 (שעון ישראל בחורף, UTC+2)
+    - cron: "*/30 10-21 * * *"
+  workflow_dispatch: {}   # כפתור "Run workflow" להרצה ידנית
+
+permissions:
+  contents: write
+
+concurrency:
+  group: homework
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      MASHOV_SCHOOL: ${{ secrets.MASHOV_SCHOOL }}
+      MASHOV_USER: ${{ secrets.MASHOV_USER }}
+      MASHOV_PASS: ${{ secrets.MASHOV_PASS }}
+      AI_PROVIDER: ${{ vars.AI_PROVIDER || 'groq' }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GROQ_MODEL: ${{ vars.GROQ_MODEL || 'openai/gpt-oss-120b' }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      SMTP_HOST: ${{ vars.SMTP_HOST || 'smtp.gmail.com' }}
+      SMTP_PORT: ${{ vars.SMTP_PORT || '587' }}
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_PASS: ${{ secrets.SMTP_PASS }}
+      MAIL_TO: ${{ secrets.MAIL_TO }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install requests
+
+      - name: בדיקה במשו"ב
+        id: fetch
+        run: python engine.py fetch
+
+      # הדפדפן (לצילום הדף) מותקן רק כשיש שיעור בית חדש, כדי לחסוך זמן
+      - name: התקנת דפדפן וגופן עברי
+        if: steps.fetch.outputs.new != '0'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-noto-core
+          pip install playwright
+          python -m playwright install --with-deps chromium
+
+      - name: פתרון ושליחת מייל
+        if: steps.fetch.outputs.new != '0'
+        run: python engine.py process
+
+      - name: שמירת מה שכבר נשלח
+        run: |
+          git config user.name "homework-bot"
+          git config user.email "homework-bot@users.noreply.github.com"
+          git add seen.json
+          git diff --cached --quiet || (git commit -m "update seen" && git push)
