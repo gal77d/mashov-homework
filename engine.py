@@ -29,6 +29,8 @@ ROOT = Path(__file__).resolve().parent
 SEEN_FILE = ROOT / "seen.json"
 PENDING_FILE = ROOT / "pending.json"
 OUT = ROOT / "out"
+SITE = ROOT / "docs"
+MAX_SITE_ITEMS = 60
 MASHOV_API = "https://web.mashov.info/api"
 
 
@@ -221,7 +223,7 @@ h1{font-size:26px;margin:0 0 4px}
 """
 
 
-def build_page(results):
+def build_page(results, heading="שיעורי בית חדשים"):
     e = html.escape
     now = dt.datetime.now().strftime("%d/%m/%Y %H:%M")
     cards = []
@@ -245,7 +247,7 @@ def build_page(results):
         '<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
         f"<title>שיעורי בית</title><style>{CSS}</style></head><body><div class=\"wrap\">"
-        f'<h1>שיעורי בית חדשים</h1><div class="sub">נוצר ב-{now} · {len(results)} שיעורים</div>'
+        f'<h1>{e(heading)}</h1><div class="sub">נוצר ב-{now} · {len(results)} שיעורים</div>'
         f'{"".join(cards)}</div></body></html>'
     )
 
@@ -321,6 +323,33 @@ def cmd_fetch():
     return new
 
 
+def save_to_site(results):
+    """מוסיף את התוצאות לאתר (docs/data/homework.json + תמונה לכל שיעור)."""
+    data_file = SITE / "data" / "homework.json"
+    img_dir = SITE / "img"
+    img_dir.mkdir(parents=True, exist_ok=True)
+    data_file.parent.mkdir(parents=True, exist_ok=True)
+    entries = json.loads(data_file.read_text(encoding="utf-8")) if data_file.exists() else []
+    now = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+    for hw, sol in results:
+        single = OUT / f"{hw['key']}.html"
+        single.write_text(build_page([(hw, sol)], heading=hw["subject"]), encoding="utf-8")
+        png = screenshot(single, img_dir / f"{hw['key']}.png")
+        entries = [e for e in entries if e["key"] != hw["key"]]
+        entries.insert(0, {
+            "key": hw["key"], "subject": hw["subject"], "date": hw["date"], "text": hw["text"],
+            "added": now, "title": sol.get("title", ""), "note": sol.get("note", ""),
+            "questions": sol.get("questions", []),
+            "img": f"img/{hw['key']}.png" if png else "",
+        })
+    keep = entries[:MAX_SITE_ITEMS]
+    for old in entries[MAX_SITE_ITEMS:]:  # מוחקים תמונות ישנות
+        if old.get("img"):
+            (SITE / old["img"]).unlink(missing_ok=True)
+    data_file.write_text(json.dumps(keep, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"  נשמר באתר: {len(results)} שיעורים")
+
+
 def cmd_process(items, mail=True, mark=True):
     if not items:
         print("אין מה לפתור")
@@ -330,13 +359,13 @@ def cmd_process(items, mail=True, mark=True):
         print(f"- פותר: {hw['subject']} ({hw['date']})")
         results.append((hw, solve(hw)))
     OUT.mkdir(exist_ok=True)
-    page = build_page(results)
-    page_path = OUT / "homework.html"
-    page_path.write_text(page, encoding="utf-8")
-    png = screenshot(page_path, OUT / "homework.png")
-    print(f"  הדף נשמר: {page_path}")
-    if mail:
-        send_mail(results, page, png)
+    save_to_site(results)
+    # מייל רק אם הוגדרה סיסמת מייל (לא חובה)
+    if mail and env("SMTP_PASS"):
+        page = build_page(results)
+        page_path = OUT / "homework.html"
+        page_path.write_text(page, encoding="utf-8")
+        send_mail(results, page, screenshot(page_path, OUT / "homework.png"))
     if mark:
         seen = load_seen() or set()
         save_seen(seen | {hw["key"] for hw in items})
@@ -364,6 +393,9 @@ def main():
         cmd_process(items, mail)
     elif cmd == "demo":
         cmd_process(DEMO, mail, mark=False)
+    elif cmd == "redo":  # מהענן: פותר מחדש את N האחרונים (בלי מייל)
+        n = int(args[1]) if len(args) > 1 else 1
+        cmd_process(mashov_homework()[-n:], mail=False)
     elif cmd == "latest":
         n = int(args[1]) if len(args) > 1 else 1
         cmd_process(mashov_homework()[-n:], mail)

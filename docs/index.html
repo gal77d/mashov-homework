@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>שיעורי בית</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="שיעורי בית">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#1f4fa3">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<style>
+:root{--bg:#f3f1ec;--card:#fff;--ink:#1d1d1f;--mute:#6b6860;--line:#ece9e1;--soft:#f7f6f2;--accent:#1f4fa3;--ok:#137a3e;--note:#fff6dc;--chip:#e9e3ff;--chipInk:#4a32a8}
+@media (prefers-color-scheme:dark){:root{--bg:#141414;--card:#1f1f1f;--ink:#f1f0ec;--mute:#a19e95;--line:#2e2e2e;--soft:#262626;--accent:#7aa7ff;--ok:#5fd18f;--note:#3a3220;--chip:#2f2851;--chipInk:#c7baff}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"Segoe UI","Noto Sans Hebrew",Arial,sans-serif}
+header{position:sticky;top:0;z-index:5;background:var(--bg);padding:calc(env(safe-area-inset-top) + 12px) 16px 10px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line)}
+header h1{font-size:22px;margin:0;flex:1}
+.btn{border:0;border-radius:10px;padding:8px 12px;font:inherit;font-size:14px;font-weight:600;background:var(--accent);color:#fff;cursor:pointer}
+.btn.ghost{background:var(--soft);color:var(--ink)}
+main{max-width:720px;margin:0 auto;padding:14px 16px calc(env(safe-area-inset-bottom) + 30px)}
+.status{color:var(--mute);font-size:13px;margin:4px 2px 12px}
+.card{background:var(--card);border-radius:16px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.08);overflow:hidden}
+.top{display:flex;align-items:center;gap:8px;padding:14px 16px;cursor:pointer}
+.subj{font-weight:700;font-size:18px;color:var(--accent)}
+.new{background:#e5484d;color:#fff;font-size:11px;border-radius:99px;padding:1px 7px;font-weight:700}
+.date{margin-inline-start:auto;color:var(--mute);font-size:13px;white-space:nowrap}
+.body{padding:0 16px 16px;display:none}
+.card.open .body{display:block}
+.orig{background:var(--soft);border-inline-start:4px solid #c9c4b6;padding:9px 11px;border-radius:6px;white-space:pre-wrap;font-size:15px;unicode-bidi:plaintext}
+.note{background:var(--note);border-radius:8px;padding:8px 11px;font-size:14px;margin-top:10px;unicode-bidi:plaintext}
+.q{border-top:1px solid var(--line);padding:11px 0 3px}
+.q:first-of-type{border-top:0}
+.qt{font-weight:700;white-space:pre-wrap;unicode-bidi:plaintext}
+.ex{display:inline-block;background:var(--chip);color:var(--chipInk);font-size:11px;border-radius:99px;padding:1px 8px;margin-inline-start:6px}
+.ans{margin-top:5px;white-space:pre-wrap;unicode-bidi:plaintext}
+.ans b{color:var(--ok)}
+.why{margin-top:3px;color:var(--mute);font-size:14px;white-space:pre-wrap;unicode-bidi:plaintext}
+.qs{margin-top:8px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.thumb{display:block;width:100%;margin-top:12px;border-radius:10px;border:1px solid var(--line)}
+.empty{text-align:center;color:var(--mute);padding:50px 10px}
+.toast{position:fixed;bottom:calc(env(safe-area-inset-bottom) + 24px);left:50%;transform:translateX(-50%) translateY(20px);background:#222;color:#fff;padding:10px 18px;border-radius:99px;font-size:14px;opacity:0;transition:.2s;pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%)}
+.viewer{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;z-index:10;overflow:auto;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+.viewer.show{display:block}
+.viewer img{width:100%;display:block}
+.viewer .close{position:fixed;top:calc(env(safe-area-inset-top) + 10px);left:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>שיעורי בית</h1>
+  <button class="btn ghost" id="refresh">רענון</button>
+</header>
+<main>
+  <div class="status" id="status">טוען…</div>
+  <div id="list"></div>
+</main>
+<div class="toast" id="toast">הועתק</div>
+<div class="viewer" id="viewer"><button class="btn close" id="closeViewer">סגור</button><img id="viewerImg" alt=""></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let items = [];
+
+function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
+
+function asText(it) {
+  const lines = [`${it.subject} (${it.date})`, it.text, ""];
+  if (it.note) lines.push(it.note, "");
+  (it.questions || []).forEach((q, i) => {
+    lines.push(`${i + 1}. ${q.q}`, `תשובה: ${q.answer}`);
+    if (q.explanation) lines.push(q.explanation);
+    lines.push("");
+  });
+  return lines.join("\n").trim();
+}
+function answersOnly(it) {
+  return (it.questions || []).map((q, i) => `${i + 1}. ${q.answer}`).join("\n");
+}
+
+async function copy(text) {
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) {
+    const t = document.createElement("textarea"); t.value = text; document.body.appendChild(t);
+    t.select(); document.execCommand("copy"); t.remove();
+  }
+  const el = $("#toast"); el.classList.add("show"); setTimeout(() => el.classList.remove("show"), 1400);
+}
+
+function render() {
+  const seen = new Set(JSON.parse(store("seenKeys") || "[]"));
+  if (!items.length) { $("#list").innerHTML = '<div class="empty">עוד אין שיעורי בית.<br>כשיגיע שיעור חדש במשו"ב, הוא יופיע כאן.</div>'; return; }
+  $("#list").innerHTML = items.map((it, idx) => {
+    const qs = (it.questions || []).map((q, i) => `
+      <div class="q"><div class="qt">${i + 1}. ${esc(q.q)}${q.example ? '<span class="ex">דוגמה</span>' : ""}</div>
+      <div class="ans"><b>תשובה:</b> ${esc(q.answer)}</div>
+      ${q.explanation ? `<div class="why">${esc(q.explanation)}</div>` : ""}</div>`).join("");
+    return `<div class="card${idx === 0 ? " open" : ""}" data-i="${idx}">
+      <div class="top"><span class="subj">${esc(it.subject)}</span>${seen.has(it.key) ? "" : '<span class="new">חדש</span>'}<span class="date">${esc(it.date)}</span></div>
+      <div class="body">
+        <div class="orig">${esc(it.text)}</div>
+        ${it.note ? `<div class="note">${esc(it.note)}</div>` : ""}
+        <div class="qs">${qs}</div>
+        <div class="row">
+          <button class="btn" data-act="all">העתק הכל</button>
+          <button class="btn ghost" data-act="ans">העתק רק תשובות</button>
+          ${it.img ? '<button class="btn ghost" data-act="img">תמונה</button>' : ""}
+        </div>
+      </div></div>`;
+  }).join("");
+}
+
+$("#list").addEventListener("click", e => {
+  const card = e.target.closest(".card"); if (!card) return;
+  const it = items[+card.dataset.i];
+  const act = e.target.dataset.act;
+  if (act === "all") return copy(asText(it));
+  if (act === "ans") return copy(answersOnly(it));
+  if (act === "img") { $("#viewerImg").src = it.img; $("#viewer").classList.add("show"); return; }
+  if (e.target.closest(".top")) {
+    card.classList.toggle("open");
+    const seen = new Set(JSON.parse(store("seenKeys") || "[]")); seen.add(it.key);
+    store("seenKeys", JSON.stringify([...seen]));
+    const tag = card.querySelector(".new"); if (tag) tag.remove();
+  }
+});
+$("#closeViewer").onclick = () => $("#viewer").classList.remove("show");
+
+async function load() {
+  $("#status").textContent = "טוען…";
+  try {
+    const r = await fetch("data/homework.json?t=" + Date.now(), { cache: "no-store" });
+    items = r.ok ? await r.json() : [];
+    const last = items[0] ? new Date(items[0].added).toLocaleString("he-IL", { dateStyle: "short", timeStyle: "short" }) : "—";
+    $("#status").textContent = `${items.length} שיעורים · עדכון אחרון: ${last}`;
+  } catch (e) {
+    $("#status").textContent = "אין חיבור לאינטרנט";
+  }
+  render();
+}
+$("#refresh").onclick = load;
+document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+load();
+</script>
+</body>
+</html>
