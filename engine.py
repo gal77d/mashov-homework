@@ -105,6 +105,16 @@ def mashov_login():
 
 def mashov_homework():
     s, uid = mashov_login()
+    items = homework_items(s, uid)
+    try:
+        items += inbox_items(s)
+    except Exception as e:  # אם הדואר לא עובד, ממשיכים עם שיעורי הבית
+        print(f"  ! לא הצלחתי לקרוא דואר נכנס: {e}")
+    items.sort(key=lambda x: x["date"])
+    return items
+
+
+def homework_items(s, uid):
     r = s.get(f"{MASHOV_API}/students/{uid}/homework", timeout=30)
     if r.status_code != 200:
         sys.exit(f"לא הצלחתי לקרוא שיעורי בית (קוד {r.status_code}).\n{r.text[:300]}")
@@ -119,7 +129,44 @@ def mashov_homework():
             "text": text,
             "key": hw_key(h, text),
         })
-    items.sort(key=lambda x: x["date"])
+    return items
+
+
+def strip_html(t):
+    t = re.sub(r"(?i)<br\s*/?>|</p>|</div>|</li>", "\n", t or "")
+    t = html.unescape(re.sub(r"<[^>]+>", "", t))
+    return re.sub(r"\n\s*\n+", "\n\n", t).strip()
+
+
+def inbox_items(s):
+    """הודעות מ"דואר נכנס" במשו"ב. ה-AI מחליט אם יש בהן משימה."""
+    r = s.get(f"{MASHOV_API}/mail/inbox/conversations", params={"skip": 0, "take": 30}, timeout=30)
+    if r.status_code != 200:
+        raise RuntimeError(f"קוד {r.status_code}")
+    convs = r.json()
+    # ביומן מדפיסים רק מבנה ומספרים, אף פעם לא תוכן (הריפו ציבורי)
+    print(f"  דואר נכנס: {len(convs)} שיחות" + (f", שדות: {sorted(convs[0].keys())}" if convs else ""))
+    items = []
+    for c in convs:
+        cid = c.get("conversationId") or c.get("id")
+        msgs = c.get("messages")
+        if not msgs and cid:
+            d = s.get(f"{MASHOV_API}/mail/conversations/{cid}", timeout=30)
+            msgs = (d.json() or {}).get("messages", []) if d.status_code == 200 else []
+        for m in msgs or []:
+            body = strip_html(m.get("body") or m.get("content") or "")
+            if not body:
+                continue
+            mid = m.get("messageId") or m.get("id") or f"{cid}|{m.get('sendTime')}"
+            sender = m.get("senderName") or c.get("senderName") or ""
+            subj = c.get("subject") or ""
+            items.append({
+                "subject": f"דואר: {subj}"[:60] if subj else "דואר נכנס",
+                "date": (m.get("sendTime") or c.get("sendTime") or "")[:10],
+                "text": (f"מאת: {sender}\n" if sender else "") + body[:4000],
+                "key": "mail:" + hashlib.sha1(str(mid).encode()).hexdigest()[:14],
+                "mail": True,
+            })
     return items
 
 
@@ -136,6 +183,8 @@ SYSTEM = """אתה מורה פרטי מעולה לתלמיד בבית ספר ב�
 - אם השאלות כתובות בטקסט: העתק כל שאלה, ותן תשובה נכונה והסבר קצר וברור של הדרך.
 - אם כתוב רק הפניה לספר/חוברת (למשל "עמ' 45 תרגילים 3-7") ואי אפשר לדעת את השאלות:
   כתוב זאת ב-note, וזהה את הנושא הסביר; ואז תן 3 שאלות לדוגמה באותו נושא עם תשובות, וסמן כל אחת בשדה "example": true.
+- אם זו הודעת דואר שאין בה שום משימה, שיעורי בית או עבודה להגשה (למשל הודעה כללית, טיול, אסיפת הורים),
+  החזר רק {"skip": true}.
 - כתוב מתמטיקה בטקסט פשוט (×, ÷, ², √, ½, ≤), בלי LaTeX.
 - תשובות מדויקות. אם אינך בטוח, כתוב זאת.
 
@@ -145,6 +194,8 @@ SYSTEM = """אתה מורה פרטי מעולה לתלמיד בבית ספר ב�
 
 
 def user_prompt(hw):
+    if hw.get("mail"):
+        return f"הודעה מ'דואר נכנס' במשו\"ב.\nנושא: {hw['subject']}\nתאריך: {hw['date']}\n{hw['text']}"
     return f"מקצוע: {hw['subject']}\nתאריך השיעור: {hw['date']}\nשיעור הבית כפי שנכתב במשו\"ב:\n{hw['text']}"
 
 
@@ -316,6 +367,13 @@ def cmd_fetch():
         print(f"ריצה ראשונה: סימנתי {len(items)} שיעורי בית קיימים. מעכשיו יישלחו רק חדשים.")
         set_output("new", 0)
         return []
+    if not any(k.startswith("mail:") for k in seen):
+        # פעם ראשונה עם דואר: לא פותרים את כל ההודעות הישנות
+        mail_keys = {h["key"] for h in items if h.get("mail")}
+        if mail_keys:
+            seen |= mail_keys
+            save_seen(seen)
+            print(f"סימנתי {len(mail_keys)} הודעות דואר קיימות")
     new = [h for h in items if h["key"] not in seen]
     print(f"נמצאו {len(items)} שיעורי בית, מתוכם {len(new)} חדשים")
     PENDING_FILE.write_text(json.dumps(new, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -332,6 +390,9 @@ def save_to_site(results):
     entries = json.loads(data_file.read_text(encoding="utf-8")) if data_file.exists() else []
     now = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     for hw, sol in results:
+        if hw.get("mail"):
+            # האתר ציבורי: לא מפרסמים את ההודעה עצמה (שם השולח, נושא, גוף ההודעה), רק את המשימה שנפתרה
+            hw = dict(hw, subject="משימה מהדואר", text=sol.get("title") or "משימה מהודעה במשו\"ב")
         single = OUT / f"{hw['key']}.html"
         single.write_text(build_page([(hw, sol)], heading=hw["subject"]), encoding="utf-8")
         png = screenshot(single, img_dir / f"{hw['key']}.png")
@@ -357,9 +418,14 @@ def cmd_process(items, mail=True, mark=True):
     results = []
     for hw in items:
         print(f"- פותר: {hw['subject']} ({hw['date']})")
-        results.append((hw, solve(hw)))
+        sol = solve(hw)
+        if sol.get("skip"):
+            print("  (הודעה בלי משימה, מדלג)")
+            continue
+        results.append((hw, sol))
     OUT.mkdir(exist_ok=True)
-    save_to_site(results)
+    if results:
+        save_to_site(results)
     # מייל רק אם הוגדרה סיסמת מייל (לא חובה)
     if mail and env("SMTP_PASS"):
         page = build_page(results)
