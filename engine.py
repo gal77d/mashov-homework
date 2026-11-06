@@ -271,6 +271,12 @@ h1{font-size:26px;margin:0 0 4px}
 .ans b{color:#137a3e}
 .why{margin-top:4px;color:#4b4943;font-size:14px;white-space:pre-wrap}
 .orig,.qt,.ans,.why,.note{unicode-bidi:plaintext;text-align:start}
+@media print{
+body{background:#fff}
+.wrap{max-width:none;padding:0}
+.hw{box-shadow:none;border:1px solid #ddd;padding:14px 16px}
+.q{break-inside:avoid}
+}
 """
 
 
@@ -303,7 +309,8 @@ def build_page(results, heading="שיעורי בית חדשים"):
     )
 
 
-def screenshot(page_path, png_path):
+def screenshot(page_path, png_path, pdf_path=None):
+    """צילום הדף לתמונה, ואם ביקשו - גם קובץ PDF להדפסה (A4)."""
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -313,9 +320,14 @@ def screenshot(page_path, png_path):
         b = p.chromium.launch()
         pg = b.new_page(viewport={"width": 760, "height": 600}, device_scale_factor=2)
         pg.goto(page_path.as_uri())
-        pg.screenshot(path=str(png_path), full_page=True)
+        if png_path:
+            pg.screenshot(path=str(png_path), full_page=True)
+        if pdf_path:
+            pg.emulate_media(media="print")
+            pg.pdf(path=str(pdf_path), format="A4", print_background=True,
+                   margin={"top": "12mm", "bottom": "12mm", "left": "10mm", "right": "10mm"})
         b.close()
-    return png_path
+    return png_path or pdf_path
 
 
 # ---------------------------------------------------------------- mail
@@ -395,20 +407,42 @@ def save_to_site(results):
             hw = dict(hw, subject="משימה מהדואר", text=sol.get("title") or "משימה מהודעה במשו\"ב")
         single = OUT / f"{hw['key']}.html"
         single.write_text(build_page([(hw, sol)], heading=hw["subject"]), encoding="utf-8")
-        png = screenshot(single, img_dir / f"{hw['key']}.png")
+        png = screenshot(single, img_dir / f"{hw['key']}.png", img_dir / f"{hw['key']}.pdf")
         entries = [e for e in entries if e["key"] != hw["key"]]
         entries.insert(0, {
             "key": hw["key"], "subject": hw["subject"], "date": hw["date"], "text": hw["text"],
             "added": now, "title": sol.get("title", ""), "note": sol.get("note", ""),
             "questions": sol.get("questions", []),
             "img": f"img/{hw['key']}.png" if png else "",
+            "pdf": f"img/{hw['key']}.pdf" if png else "",
         })
     keep = entries[:MAX_SITE_ITEMS]
-    for old in entries[MAX_SITE_ITEMS:]:  # מוחקים תמונות ישנות
-        if old.get("img"):
-            (SITE / old["img"]).unlink(missing_ok=True)
+    for old in entries[MAX_SITE_ITEMS:]:  # מוחקים תמונות וקבצים ישנים
+        for f in ("img", "pdf"):
+            if old.get(f):
+                (SITE / old[f]).unlink(missing_ok=True)
     data_file.write_text(json.dumps(keep, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"  נשמר באתר: {len(results)} שיעורים")
+
+
+def cmd_pdfs():
+    data_file = SITE / "data" / "homework.json"
+    entries = json.loads(data_file.read_text(encoding="utf-8")) if data_file.exists() else []
+    OUT.mkdir(exist_ok=True)
+    made = 0
+    for it in entries:
+        if it.get("pdf") and (SITE / it["pdf"]).exists():
+            continue
+        hw = {k: it[k] for k in ("key", "subject", "date", "text")}
+        sol = {k: it.get(k) for k in ("title", "note", "questions")}
+        single = OUT / f"{it['key']}.html"
+        single.write_text(build_page([(hw, sol)], heading=hw["subject"]), encoding="utf-8")
+        pdf = SITE / "img" / f"{it['key']}.pdf"
+        if screenshot(single, None, pdf):
+            it["pdf"] = f"img/{it['key']}.pdf"
+            made += 1
+    data_file.write_text(json.dumps(entries, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"נוצרו {made} קבצי PDF")
 
 
 def cmd_process(items, mail=True, mark=True):
@@ -462,6 +496,8 @@ def main():
     elif cmd == "redo":  # מהענן: פותר מחדש את N האחרונים (בלי מייל)
         n = int(args[1]) if len(args) > 1 else 1
         cmd_process(mashov_homework()[-n:], mail=False)
+    elif cmd == "pdfs":  # יוצר PDF לשיעורים שכבר באתר ואין להם עדיין
+        cmd_pdfs()
     elif cmd == "latest":
         n = int(args[1]) if len(args) > 1 else 1
         cmd_process(mashov_homework()[-n:], mail)

@@ -27,7 +27,8 @@
     "example": true
    }
   ],
-  "img": "img/3ce8db73d0bcf0a2.png"
+  "img": "img/3ce8db73d0bcf0a2.png",
+  "pdf": "img/3ce8db73d0bcf0a2.pdf"
  },
  {
   "key": "ac5834687dbe6f02",
@@ -57,7 +58,8 @@
     "example": true
    }
   ],
-  "img": "img/ac5834687dbe6f02.png"
+  "img": "img/ac5834687dbe6f02.png",
+  "pdf": "img/ac5834687dbe6f02.pdf"
  },
  {
   "key": "4c255a53c102ae0e",
@@ -87,7 +89,8 @@
     "example": true
    }
   ],
-  "img": "img/4c255a53c102ae0e.png"
+  "img": "img/4c255a53c102ae0e.png",
+  "pdf": "img/4c255a53c102ae0e.pdf"
  },
  {
   "key": "cac7b8faa6bbe621",
@@ -117,6 +120,7 @@
     "example": true
    }
   ],
-  "img": "img/cac7b8faa6bbe621.png"
+  "img": "img/cac7b8faa6bbe621.png",
+  "pdf": "img/cac7b8faa6bbe621.pdf"
  }
 ]
