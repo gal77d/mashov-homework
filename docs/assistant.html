@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>עוזר שיעורי בית</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="עוזר">
+<meta name="theme-color" content="#1f4fa3">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<style>
+:root{--bg:#f3f1ec;--card:#fff;--ink:#1d1d1f;--mute:#6b6860;--line:#ece9e1;--soft:#f7f6f2;--accent:#1f4fa3;--me:#1f4fa3;--meInk:#fff;--ok:#137a3e;--rec:#e5484d}
+@media (prefers-color-scheme:dark){:root{--bg:#141414;--card:#1f1f1f;--ink:#f1f0ec;--mute:#a19e95;--line:#2e2e2e;--soft:#262626;--accent:#7aa7ff;--me:#2c4f8f;--meInk:#fff;--ok:#5fd18f}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"Segoe UI","Noto Sans Hebrew",Arial,sans-serif;display:flex;flex-direction:column}
+header{background:var(--bg);padding:calc(env(safe-area-inset-top) + 10px) 16px 8px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)}
+header h1{font-size:20px;margin:0;flex:1}
+.btn{border:0;border-radius:10px;padding:8px 12px;font:inherit;font-size:14px;font-weight:600;background:var(--accent);color:#fff;cursor:pointer;text-decoration:none;display:inline-block}
+.btn.ghost{background:var(--soft);color:var(--ink)}
+.tabs{display:flex;gap:6px;padding:8px 16px 0}
+.tab{flex:1;text-align:center;padding:8px;border-radius:10px;background:var(--soft);font-weight:600;font-size:14px;cursor:pointer}
+.tab.on{background:var(--accent);color:#fff}
+main{flex:1;overflow-y:auto;padding:12px 16px}
+.msg{max-width:88%;padding:10px 13px;border-radius:16px;margin-bottom:10px;white-space:pre-wrap;unicode-bidi:plaintext;line-height:1.45;font-size:16px}
+.msg.me{background:var(--me);color:var(--meInk);margin-inline-start:auto;border-end-start-radius:4px}
+.msg.ai{background:var(--card);box-shadow:0 1px 3px rgba(0,0,0,.08);border-end-end-radius:4px}
+.msg.sys{background:none;color:var(--mute);font-size:13px;text-align:center;max-width:100%}
+.saved{display:block;margin-top:6px;font-size:13px;color:var(--ok);font-weight:600}
+.empty{color:var(--mute);text-align:center;padding:30px 10px;line-height:1.6}
+.task{background:var(--card);border-radius:14px;padding:12px 14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.task h3{margin:0 0 4px;font-size:17px;color:var(--accent);unicode-bidi:plaintext}
+.task .meta{color:var(--mute);font-size:12px;margin-bottom:6px}
+.task .det{background:var(--soft);border-radius:8px;padding:8px 10px;font-size:14px;white-space:pre-wrap;unicode-bidi:plaintext}
+.task .ans{margin-top:8px;white-space:pre-wrap;unicode-bidi:plaintext;font-size:15px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+footer{padding:10px 16px calc(env(safe-area-inset-bottom) + 10px);border-top:1px solid var(--line);background:var(--bg);display:flex;gap:8px;align-items:center}
+footer textarea{flex:1;resize:none;border:1px solid var(--line);border-radius:14px;padding:10px 12px;font:inherit;font-size:16px;background:var(--card);color:var(--ink);max-height:120px}
+.mic{width:56px;height:56px;border-radius:50%;border:0;background:var(--accent);color:#fff;flex:none;display:grid;place-items:center;cursor:pointer}
+.mic.rec{background:var(--rec);animation:pulse 1.2s infinite}
+.mic.busy{opacity:.5}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(229,72,77,.5)}70%{box-shadow:0 0 0 14px rgba(229,72,77,0)}100%{box-shadow:0 0 0 0 rgba(229,72,77,0)}}
+.send{width:44px;height:44px;border-radius:50%;padding:0;flex:none;display:grid;place-items:center}
+.sheet{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;z-index:20;align-items:flex-end}
+.sheet.show{display:flex}
+.panel{background:var(--card);width:100%;border-radius:18px 18px 0 0;padding:18px 16px calc(env(safe-area-inset-bottom) + 18px);max-height:85vh;overflow:auto}
+.panel h2{margin:0 0 10px;font-size:19px}
+.panel label{display:block;font-weight:600;margin:12px 0 4px;font-size:14px}
+.panel input[type=password],.panel input[type=text]{width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);font:inherit;font-size:16px;background:var(--soft);color:var(--ink);direction:ltr}
+.hint{color:var(--mute);font-size:13px;line-height:1.5;margin-top:4px}
+.check{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:15px}
+.toast{position:fixed;bottom:110px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:9px 16px;border-radius:99px;font-size:14px;opacity:0;transition:.2s;pointer-events:none;z-index:30}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+<header>
+  <a class="btn ghost" href="./">שיעורי בית</a>
+  <h1>עוזר</h1>
+  <button class="btn ghost" id="openSettings">הגדרות</button>
+</header>
+<div class="tabs">
+  <div class="tab on" data-tab="chat">שיחה</div>
+  <div class="tab" data-tab="tasks">המשימות שלי <span id="taskCount"></span></div>
+</div>
+<main id="chat"></main>
+<main id="tasks" hidden></main>
+<footer id="bar">
+  <textarea id="text" rows="1" placeholder="כתוב, או לחץ על המיקרופון ודבר"></textarea>
+  <button class="btn send" id="send" aria-label="שלח">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 5l-7 7 7 7"/></svg>
+  </button>
+  <button class="mic" id="mic" aria-label="דבר">
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+  </button>
+</footer>
+
+<div class="sheet" id="settings">
+  <div class="panel">
+    <h2>הגדרות</h2>
+    <label for="key">מפתח Groq</label>
+    <input type="password" id="key" placeholder="gsk_..." autocomplete="off">
+    <div class="hint">המפתח נשמר רק בטלפון הזה, ולא נשלח לשום מקום חוץ מ-Groq. משיגים אותו ב-console.groq.com, בתפריט API Keys.</div>
+    <label class="check"><input type="checkbox" id="voiceOn"> העוזר עונה בקול</label>
+    <div class="row">
+      <button class="btn" id="saveSettings">שמור</button>
+      <button class="btn ghost" id="clearChat">מחק את השיחה</button>
+      <button class="btn ghost" id="closeSettings">סגור</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const GROQ = "https://api.groq.com/openai/v1";
+const MODEL = "openai/gpt-oss-120b";
+
+function load(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
+function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+
+let history = load("aiHistory", []);   // [{role, content}]
+let tasks = load("aiTasks", []);       // [{id, title, subject, due, details, answer, added}]
+let settings = load("aiSettings", { key: "", voice: true });
+let homework = [];
+
+function toast(t) { const el = $("#toast"); el.textContent = t; el.classList.add("show"); setTimeout(() => el.classList.remove("show"), 1800); }
+
+// ---------- רשימת שיעורי הבית מהאתר (כדי שהעוזר יכיר אותם)
+fetch("data/homework.json?t=" + Date.now(), { cache: "no-store" })
+  .then(r => r.ok ? r.json() : []).then(d => homework = d).catch(() => {});
+
+// ---------- תצוגה
+function renderChat() {
+  const box = $("#chat");
+  if (!history.length) {
+    box.innerHTML = `<div class="empty">לחץ על המיקרופון ודבר, או כתוב.<br>אפשר לשאול על שיעורי הבית, לבקש הסבר,<br>או לספר "יש לי משימה..." והעוזר יפתור וישמור אותה.</div>`;
+  } else {
+    box.innerHTML = history.map(m => {
+      if (m.role === "user") return `<div class="msg me">${esc(m.content)}</div>`;
+      let j; try { j = JSON.parse(m.content); } catch (e) { j = { reply: m.content }; }
+      return `<div class="msg ai">${esc(j.reply)}${j.task ? `<span class="saved">נשמר במשימות שלי: ${esc(j.task.title)}</span>` : ""}</div>`;
+    }).join("");
+  }
+  box.scrollTop = box.scrollHeight;
+}
+function sys(t) { const d = document.createElement("div"); d.className = "msg sys"; d.textContent = t; $("#chat").appendChild(d); $("#chat").scrollTop = 1e9; return d; }
+
+function renderTasks() {
+  $("#taskCount").textContent = tasks.length ? `(${tasks.length})` : "";
+  const box = $("#tasks");
+  if (!tasks.length) { box.innerHTML = `<div class="empty">אין עדיין משימות.<br>ספר לעוזר "יש לי משימה ב..." והוא יפתור וישמור אותה כאן.</div>`; return; }
+  box.innerHTML = tasks.map(t => `<div class="task" data-id="${t.id}">
+    <h3>${esc(t.title)}</h3>
+    <div class="meta">${esc([t.subject, t.due ? "להגשה: " + t.due : ""].filter(Boolean).join(" · "))}</div>
+    ${t.details ? `<div class="det">${esc(t.details)}</div>` : ""}
+    <div class="ans">${esc(t.answer)}</div>
+    <div class="row"><button class="btn" data-act="copy">העתק תשובה</button><button class="btn ghost" data-act="say">הקרא</button><button class="btn ghost" data-act="del">מחק</button></div>
+  </div>`).join("");
+}
+$("#tasks").addEventListener("click", e => {
+  const card = e.target.closest(".task"); if (!card) return;
+  const t = tasks.find(x => x.id === card.dataset.id); const act = e.target.dataset.act;
+  if (act === "copy") copy(t.answer);
+  if (act === "say") speak(t.answer);
+  if (act === "del" && confirm("למחוק את המשימה?")) { tasks = tasks.filter(x => x !== t); save("aiTasks", tasks); renderTasks(); }
+});
+async function copy(text) {
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) { const a = document.createElement("textarea"); a.value = text; document.body.appendChild(a); a.select(); document.execCommand("copy"); a.remove(); }
+  toast("הועתק");
+}
+
+document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
+  document.querySelectorAll(".tab").forEach(x => x.classList.toggle("on", x === t));
+  const chat = t.dataset.tab === "chat";
+  $("#chat").hidden = !chat; $("#tasks").hidden = chat; $("#bar").style.display = chat ? "" : "none";
+});
+
+// ---------- הגדרות
+function openSettings() { $("#key").value = settings.key; $("#voiceOn").checked = settings.voice; $("#settings").classList.add("show"); }
+$("#openSettings").onclick = openSettings;
+$("#closeSettings").onclick = () => $("#settings").classList.remove("show");
+$("#saveSettings").onclick = () => {
+  settings = { key: $("#key").value.trim(), voice: $("#voiceOn").checked };
+  save("aiSettings", settings); $("#settings").classList.remove("show"); toast("נשמר");
+};
+$("#clearChat").onclick = () => { if (confirm("למחוק את כל השיחה?")) { history = []; save("aiHistory", history); renderChat(); $("#settings").classList.remove("show"); } };
+
+// ---------- דיבור (הקראה)
+let voices = [];
+function loadVoices() { voices = speechSynthesis.getVoices(); }
+if ("speechSynthesis" in window) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
+function speak(text) {
+  if (!("speechSynthesis" in window) || !text) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = "he-IL";
+  const v = voices.find(v => v.lang && v.lang.toLowerCase().startsWith("he"));
+  if (v) u.voice = v;
+  u.rate = 1.05;
+  speechSynthesis.speak(u);
+}
+function unlockSpeech() { // באייפון צריך "לפתוח" את הקול בלחיצה הראשונה
+  if ("speechSynthesis" in window && !unlockSpeech.done) { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; speechSynthesis.speak(u); unlockSpeech.done = true; }
+}
+
+// ---------- ה-AI
+function systemPrompt() {
+  const today = new Date().toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "numeric", year: "numeric" });
+  const hw = homework.slice(0, 10).map(h => `- ${h.subject} (${h.date}): ${String(h.text).slice(0, 300)}${h.title ? " | " + h.title : ""}`).join("\n") || "(אין)";
+  const my = tasks.slice(0, 15).map(t => `- ${t.title}${t.subject ? " (" + t.subject + ")" : ""}${t.due ? ", להגשה " + t.due : ""}`).join("\n") || "(אין)";
+  return `אתה עוזר אישי חכם וחביב לתלמיד בישראל. מדברים איתך בקול, ולכן התשובה שלך מוקראת בקול.
+היום: ${today}.
+
+שיעורי הבית האחרונים ממשו"ב:
+${hw}
+
+המשימות שהתלמיד שמר אצלך:
+${my}
+
+כללים:
+- ענה בעברית פשוטה וברורה.
+- השדה "reply" מוקרא בקול, לכן הוא קצר: 1 עד 4 משפטים, בלי רשימות ארוכות, בלי סימנים מיוחדים ובלי LaTeX.
+- כשהתלמיד מספר על משימה (למשל "יש לי משימה בהיסטוריה..."), פתור אותה במלואה ושמור אותה בשדה "task".
+  ב-reply תגיד בקצרה ששמרת ומה עיקר התשובה. את הפתרון המלא כתוב ב-task.answer.
+- אם בשאלה יש בחירה ("בחרו", "לבחירתכם", "דוגמה משלכם"): בחר בעצמך אפשרות מתאימה וענה עד הסוף. אל תכתוב "תלוי בבחירתכם".
+- אל תמציא עובדות. אם אתה לא מכיר ספר, שיר או סיפור מסוים, אמור זאת בכנות ובקש מהתלמיד לספר מה כתוב בו.
+- אם חסר פרט כדי לפתור (למשל מה בדיוק השאלה), שאל שאלה אחת קצרה.
+
+החזר JSON בלבד:
+{"reply": "מה שמוקרא בקול", "task": null}
+או, כשיש משימה לשמור:
+{"reply": "...", "task": {"title": "כותרת קצרה", "subject": "מקצוע או ריק", "due": "תאריך הגשה או ריק", "details": "מה המשימה", "answer": "הפתרון המלא, מוכן להגשה"}}`;
+}
+
+async function ask(userText) {
+  if (!settings.key) { openSettings(); toast("צריך להכניס מפתח Groq"); return; }
+  history.push({ role: "user", content: userText }); save("aiHistory", history); renderChat();
+  const wait = sys("חושב…");
+  try {
+    const msgs = [{ role: "system", content: systemPrompt() }, ...history.slice(-16)];
+    const r = await fetch(GROQ + "/chat/completions", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + settings.key, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: MODEL, messages: msgs, temperature: 0.4, response_format: { type: "json_object" } }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error?.message || ("שגיאה " + r.status));
+    let j; try { j = JSON.parse(d.choices[0].message.content); } catch (e) { j = { reply: d.choices[0].message.content }; }
+    if (j.task && j.task.title) {
+      tasks.unshift({ id: String(Date.now()), added: new Date().toISOString(), title: j.task.title, subject: j.task.subject || "", due: j.task.due || "", details: j.task.details || "", answer: j.task.answer || "" });
+      save("aiTasks", tasks); renderTasks();
+    }
+    history.push({ role: "assistant", content: JSON.stringify({ reply: j.reply || "", task: j.task && j.task.title ? { title: j.task.title } : null }) });
+    save("aiHistory", history.slice(-60)); history = history.slice(-60);
+    renderChat();
+    if (settings.voice) speak(j.reply);
+  } catch (e) {
+    wait.remove(); sys("לא הצלחתי: " + e.message);
+    return;
+  }
+}
+
+// ---------- הקלטה ותמלול (Whisper של Groq)
+let rec = null, chunks = [], stream = null;
+async function startRec() {
+  if (!settings.key) { openSettings(); toast("צריך להכניס מפתח Groq"); return; }
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch (e) { toast("אין גישה למיקרופון"); return; }
+  const type = ["audio/webm", "audio/mp4", "audio/ogg"].find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || "";
+  rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+  chunks = [];
+  rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+  rec.onstop = onStop;
+  rec.start();
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+  $("#mic").classList.add("rec");
+}
+function stopRec() { if (rec && rec.state === "recording") rec.stop(); $("#mic").classList.remove("rec"); }
+async function onStop() {
+  stream.getTracks().forEach(t => t.stop());
+  const type = rec.mimeType || "audio/webm";
+  const blob = new Blob(chunks, { type });
+  if (blob.size < 2000) { toast("ההקלטה קצרה מדי"); return; }
+  const ext = type.includes("mp4") ? "m4a" : type.includes("ogg") ? "ogg" : "webm";
+  $("#mic").classList.add("busy");
+  const wait = sys("מתמלל…");
+  try {
+    const fd = new FormData();
+    fd.append("file", blob, "voice." + ext);
+    fd.append("model", "whisper-large-v3-turbo");
+    fd.append("language", "he");
+    const r = await fetch(GROQ + "/audio/transcriptions", { method: "POST", headers: { "Authorization": "Bearer " + settings.key }, body: fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error?.message || ("שגיאה " + r.status));
+    wait.remove();
+    const text = (d.text || "").trim();
+    if (!text) { toast("לא שמעתי כלום"); return; }
+    await ask(text);
+  } catch (e) { wait.remove(); sys("לא הצלחתי לתמלל: " + e.message); }
+  finally { $("#mic").classList.remove("busy"); }
+}
+$("#mic").onclick = () => { unlockSpeech(); if (rec && rec.state === "recording") stopRec(); else startRec(); };
+
+$("#send").onclick = () => { unlockSpeech(); const t = $("#text").value.trim(); if (!t) return; $("#text").value = ""; ask(t); };
+$("#text").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#send").click(); } });
+
+renderChat(); renderTasks();
+if (!settings.key) setTimeout(openSettings, 300);
+</script>
+</body>
+</html>
