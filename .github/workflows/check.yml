@@ -9,6 +9,9 @@ on:
       redo:
         description: "לפתור מחדש את X שיעורי הבית האחרונים (0 = בדיקה רגילה)"
         default: "0"
+      test:
+        description: "בדיקה: לפתור את X האחרונים ולהציג ביומן בלבד, בלי לשנות את האתר (0 = לא)"
+        default: "0"
 
 permissions:
   contents: write
@@ -34,6 +37,7 @@ jobs:
       SMTP_PASS: ${{ secrets.SMTP_PASS }}
       MAIL_TO: ${{ secrets.MAIL_TO }}
       REDO: ${{ github.event.inputs.redo || '0' }}
+      TEST: ${{ github.event.inputs.test || '0' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -46,7 +50,8 @@ jobs:
       - name: בדיקה במשו"ב
         id: fetch
         run: |
-          if [ "$REDO" != "0" ]; then echo "new=$REDO" >> "$GITHUB_OUTPUT"; else python engine.py fetch; fi
+          if [ "$TEST" != "0" ]; then python engine.py test "$TEST"; echo "new=0" >> "$GITHUB_OUTPUT"
+          elif [ "$REDO" != "0" ]; then echo "new=$REDO" >> "$GITHUB_OUTPUT"; else python engine.py fetch; fi
 
       # הדפדפן (לצילום הדף) מותקן רק כשיש שיעור בית חדש, כדי לחסוך זמן
       - name: התקנת דפדפן וגופן עברי

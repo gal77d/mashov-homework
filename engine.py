@@ -547,6 +547,11 @@ def main():
     elif cmd == "redo":  # מהענן: פותר מחדש את N האחרונים (בלי מייל)
         n = int(args[1]) if len(args) > 1 else 1
         cmd_process(mashov_homework()[-n:], mail=False)
+    elif cmd == "test":  # פותר את N האחרונים ומדפיס את התשובות, בלי לשמור לאתר
+        n = int(args[1]) if len(args) > 1 else 1
+        for hw in mashov_homework()[-n:]:
+            print(f"\n===== {'הודעת דואר' if hw.get('mail') else hw['subject']} ({hw['date']}) =====")
+            print(json.dumps(solve(hw), ensure_ascii=False, indent=1))
     elif cmd == "pdfs":  # יוצר PDF לשיעורים שכבר באתר ואין להם עדיין
         cmd_pdfs()
     elif cmd == "latest":
