@@ -118,8 +118,11 @@ def homework_items(s, uid):
     r = s.get(f"{MASHOV_API}/students/{uid}/homework", timeout=30)
     if r.status_code != 200:
         sys.exit(f"לא הצלחתי לקרוא שיעורי בית (קוד {r.status_code}).\n{r.text[:300]}")
+    rows = r.json()
+    dates = sorted((h.get("lessonDate") or "")[:10] for h in rows)
+    print(f"  עמודת שיעורי בית: {len(rows)} שורות, האחרונה: {dates[-1] if dates else '-'}")
     items = []
-    for h in r.json():
+    for h in rows:
         text = (h.get("homework") or "").strip()
         if not text:
             continue
@@ -138,6 +141,13 @@ def strip_html(t):
     return re.sub(r"\n\s*\n+", "\n\n", t).strip()
 
 
+def msg_body(m):
+    for k in ("body", "content", "text", "messageBody", "html"):
+        if isinstance(m.get(k), str) and m[k].strip():
+            return strip_html(m[k])
+    return ""
+
+
 def inbox_items(s):
     """הודעות מ"דואר נכנס" במשו"ב. ה-AI מחליט אם יש בהן משימה."""
     r = s.get(f"{MASHOV_API}/mail/inbox/conversations", params={"skip": 0, "take": 30}, timeout=30)
@@ -147,14 +157,23 @@ def inbox_items(s):
     # ביומן מדפיסים רק מבנה ומספרים, אף פעם לא תוכן (הריפו ציבורי)
     print(f"  דואר נכנס: {len(convs)} שיחות" + (f", שדות: {sorted(convs[0].keys())}" if convs else ""))
     items = []
+    shown = False
     for c in convs:
         cid = c.get("conversationId") or c.get("id")
-        msgs = c.get("messages")
-        if not msgs and cid:
+        msgs = c.get("messages") or []
+        if cid and not any(msg_body(m) for m in msgs):
+            # ברשימה אין את גוף ההודעה - פותחים את השיחה עצמה
             d = s.get(f"{MASHOV_API}/mail/conversations/{cid}", timeout=30)
-            msgs = (d.json() or {}).get("messages", []) if d.status_code == 200 else []
+            if d.status_code == 200:
+                full = d.json() or {}
+                msgs = full.get("messages", []) if isinstance(full, dict) else full
+            elif not shown:
+                print(f"  ! פתיחת שיחה: קוד {d.status_code}")
+        if msgs and not shown:
+            shown = True
+            print(f"  שדות הודעה: {sorted(msgs[0].keys())}")
         for m in msgs or []:
-            body = strip_html(m.get("body") or m.get("content") or "")
+            body = msg_body(m)
             if not body:
                 continue
             mid = m.get("messageId") or m.get("id") or f"{cid}|{m.get('sendTime')}"
@@ -381,7 +400,9 @@ def cmd_fetch():
         return []
     if not any(k.startswith("mail:") for k in seen):
         # פעם ראשונה עם דואר: לא פותרים את כל ההודעות הישנות
-        mail_keys = {h["key"] for h in items if h.get("mail")}
+        # (הודעות מ-4 הימים האחרונים כן נפתרות)
+        cutoff = (dt.date.today() - dt.timedelta(days=4)).isoformat()
+        mail_keys = {h["key"] for h in items if h.get("mail") and h["date"] < cutoff}
         if mail_keys:
             seen |= mail_keys
             save_seen(seen)
@@ -451,7 +472,7 @@ def cmd_process(items, mail=True, mark=True):
         return
     results = []
     for hw in items:
-        print(f"- פותר: {hw['subject']} ({hw['date']})")
+        print(f"- פותר: {'הודעת דואר' if hw.get('mail') else hw['subject']} ({hw['date']})")
         sol = solve(hw)
         if sol.get("skip"):
             print("  (הודעה בלי משימה, מדלג)")
