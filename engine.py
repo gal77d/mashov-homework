@@ -136,7 +136,10 @@ def homework_items(s, uid):
 
 
 def strip_html(t):
-    t = re.sub(r"(?i)<br\s*/?>|</p>|</div>|</li>", "\n", t or "")
+    # קישורים: שומרים את הכתובת עצמה, כדי שאפשר יהיה לפתוח אותה אחר כך
+    t = re.sub(r'(?is)<a\b[^>]*href=["\'](https?://[^"\']+)["\'][^>]*>(.*?)</a>',
+               lambda m: f"{m.group(2)} ({m.group(1)})" if m.group(1) not in m.group(2) else m.group(2), t or "")
+    t = re.sub(r"(?i)<br\s*/?>|</p>|</div>|</li>", "\n", t)
     t = html.unescape(re.sub(r"<[^>]+>", "", t))
     return re.sub(r"\n\s*\n+", "\n\n", t).strip()
 
@@ -215,10 +218,69 @@ SYSTEM = """אתה מורה פרטי מעולה לתלמיד בבית ספר ב�
  "questions": [{"q": "השאלה", "answer": "התשובה", "explanation": "הסבר", "example": false}]}"""
 
 
+URL_RE = re.compile(r"https?://[^\s<>\"')\]]+")
+
+
+def link_url(url):
+    """ממיר קישורי גוגל לכתובת שמחזירה את התוכן עצמו."""
+    m = re.search(r"docs\.google\.com/(document|presentation|spreadsheets)/d/([\w-]+)", url)
+    if m:
+        kind, fid = m.groups()
+        if kind == "spreadsheets":
+            return f"https://docs.google.com/spreadsheets/d/{fid}/export?format=csv"
+        if kind == "presentation":
+            return f"https://docs.google.com/presentation/d/{fid}/export/txt"
+        return f"https://docs.google.com/document/d/{fid}/export?format=txt"
+    m = re.search(r"drive\.google\.com/(?:file/d/|open\?id=|uc\?id=)([\w-]+)", url)
+    if m:
+        return f"https://drive.google.com/uc?export=download&id={m.group(1)}"
+    return url
+
+
+def read_link(url, limit=6000):
+    """מוריד קישור ומחזיר את הטקסט שבו (PDF, מסמך גוגל, דף אינטרנט). מחזיר "" אם לא הצליח."""
+    try:
+        r = requests.get(link_url(url), timeout=30, headers={"User-Agent": "Mozilla/5.0 homework-helper"})
+        if r.status_code != 200:
+            return ""
+        ctype = r.headers.get("content-type", "").lower()
+        if "pdf" in ctype or r.content[:5] == b"%PDF-":
+            import io
+            from pypdf import PdfReader
+            pdf = PdfReader(io.BytesIO(r.content))
+            text = "\n".join((p.extract_text() or "") for p in pdf.pages[:15])
+        elif "html" in ctype:
+            if "accounts.google.com" in r.url or "ServiceLogin" in r.url:
+                return ""  # הקובץ דורש התחברות
+            page = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", r.text)
+            text = strip_html(page)
+        elif ctype.startswith("text/") or "csv" in ctype or "json" in ctype:
+            text = r.text
+        else:
+            return ""
+        return re.sub(r"[ \t]+", " ", text).strip()[:limit]
+    except Exception:
+        return ""
+
+
+def link_texts(text, max_links=3):
+    out = []
+    urls = [u.rstrip(".,;:!?") for u in URL_RE.findall(text or "")]
+    for url in list(dict.fromkeys(urls))[:max_links]:
+        t = read_link(url)
+        if t:
+            out.append(f"--- תוכן מהקישור {url} ---\n{t}")
+    return "\n\n".join(out)
+
+
 def user_prompt(hw):
     if hw.get("mail"):
-        return f"הודעה מ'דואר נכנס' במשו\"ב.\nנושא: {hw['subject']}\nתאריך: {hw['date']}\n{hw['text']}"
-    return f"מקצוע: {hw['subject']}\nתאריך השיעור: {hw['date']}\nשיעור הבית כפי שנכתב במשו\"ב:\n{hw['text']}"
+        p = f"הודעה מ'דואר נכנס' במשו\"ב.\nנושא: {hw['subject']}\nתאריך: {hw['date']}\n{hw['text']}"
+    else:
+        p = f"מקצוע: {hw['subject']}\nתאריך השיעור: {hw['date']}\nשיעור הבית כפי שנכתב במשו\"ב:\n{hw['text']}"
+    if hw.get("links"):
+        p += "\n\nבשיעור הבית יש קישורים. זה מה שכתוב בהם (השתמש בזה כדי לענות על השאלות האמיתיות):\n" + hw["links"]
+    return p
 
 
 def ask_groq(hw):
@@ -261,6 +323,10 @@ def ask_claude(hw):
 
 def solve(hw):
     provider = env("AI_PROVIDER", "groq").lower()
+    links = link_texts(hw.get("text", ""))
+    if links:
+        print(f"  נקרא תוכן מ-{links.count('--- תוכן מהקישור')} קישורים")
+        hw = dict(hw, links=links)
     try:
         raw = ask_claude(hw) if provider == "claude" else ask_groq(hw)
         m = re.search(r"\{.*\}", raw, re.S)

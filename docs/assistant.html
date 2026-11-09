@@ -52,6 +52,13 @@ footer textarea{flex:1;resize:none;border:1px solid var(--line);border-radius:14
 .panel input[type=password],.panel input[type=text]{width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);font:inherit;font-size:16px;background:var(--soft);color:var(--ink);direction:ltr}
 .hint{color:var(--mute);font-size:13px;line-height:1.5;margin-top:4px}
 .check{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:15px}
+#chips{padding:0 16px;display:flex;flex-wrap:wrap;gap:6px}
+#chips:empty{display:none}
+#chips{padding-top:8px;border-top:1px solid var(--line)}
+.chip{background:var(--soft);border-radius:99px;padding:5px 10px;font-size:13px;display:flex;gap:6px;align-items:center;max-width:100%}
+.chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip button{border:0;background:none;color:var(--mute);font-size:16px;cursor:pointer;padding:0}
+.file{display:block;margin-top:5px;font-size:12px;opacity:.85}
 .toast{position:fixed;bottom:110px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:9px 16px;border-radius:99px;font-size:14px;opacity:0;transition:.2s;pointer-events:none;z-index:30}
 .toast.show{opacity:1}
 </style>
@@ -68,8 +75,13 @@ footer textarea{flex:1;resize:none;border:1px solid var(--line);border-radius:14
 </div>
 <main id="chat"></main>
 <main id="tasks" hidden></main>
+<div id="chips"></div>
 <footer id="bar">
-  <textarea id="text" rows="1" placeholder="כתוב, או לחץ על המיקרופון ודבר"></textarea>
+  <button class="btn ghost send" id="attach" aria-label="צרף קובץ">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5l-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l7.9-7.9"/></svg>
+  </button>
+  <input type="file" id="file" accept=".pdf,.docx,.txt,image/*" hidden>
+  <textarea id="text" rows="1" placeholder="כתוב, הדבק קישור, או לחץ על המיקרופון"></textarea>
   <button class="btn send" id="send" aria-label="שלח">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 5l-7 7 7 7"/></svg>
   </button>
@@ -121,7 +133,7 @@ function renderChat() {
     box.innerHTML = `<div class="empty">לחץ על המיקרופון ודבר, או כתוב.<br>אפשר לשאול על שיעורי הבית, לבקש הסבר,<br>או לספר "יש לי משימה..." והעוזר יפתור וישמור אותה.</div>`;
   } else {
     box.innerHTML = history.map(m => {
-      if (m.role === "user") return `<div class="msg me">${esc(m.content)}</div>`;
+      if (m.role === "user") return `<div class="msg me">${esc(m.show ?? m.content)}${(m.files || []).map(f => `<span class="file">קובץ מצורף: ${esc(f)}</span>`).join("")}</div>`;
       let j; try { j = JSON.parse(m.content); } catch (e) { j = { reply: m.content }; }
       return `<div class="msg ai">${esc(j.reply)}${j.task ? `<span class="saved">נשמר במשימות שלי: ${esc(j.task.title)}</span>` : ""}</div>`;
     }).join("");
@@ -210,6 +222,7 @@ ${my}
   ב-reply תגיד בקצרה ששמרת ומה עיקר התשובה. את הפתרון המלא כתוב ב-task.answer.
 - אם בשאלה יש בחירה ("בחרו", "לבחירתכם", "דוגמה משלכם"): בחר בעצמך אפשרות מתאימה וענה עד הסוף. אל תכתוב "תלוי בבחירתכם".
 - אל תמציא עובדות. אם אתה לא מכיר ספר, שיר או סיפור מסוים, אמור זאת בכנות ובקש מהתלמיד לספר מה כתוב בו.
+- אם בהודעה יש "תוכן הקובץ" או "תוכן מהקישור", זה הטקסט האמיתי של המשימה: ענה לפיו, ואל תגיד שאינך יכול לפתוח קבצים.
 - אם חסר פרט כדי לפתור (למשל מה בדיוק השאלה), שאל שאלה אחת קצרה.
 
 החזר JSON בלבד:
@@ -218,12 +231,106 @@ ${my}
 {"reply": "...", "task": {"title": "כותרת קצרה", "subject": "מקצוע או ריק", "due": "תאריך הגשה או ריק", "details": "מה המשימה", "answer": "הפתרון המלא, מוכן להגשה"}}`;
 }
 
+// ---------- קבצים וקישורים
+const LIMIT = 8000;
+let attached = []; // [{name, text}]
+function loadScript(src) {
+  return new Promise((ok, bad) => { if (document.querySelector(`script[src="${src}"]`)) return ok(); const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = () => bad(new Error("לא נטען " + src)); document.head.appendChild(s); });
+}
+async function pdfText(buf) {
+  const base = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
+  await loadScript(base + "pdf.min.js");
+  pdfjsLib.GlobalWorkerOptions.workerSrc = base + "pdf.worker.min.js";
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  let out = "";
+  for (let i = 1; i <= Math.min(pdf.numPages, 15); i++) {
+    const c = await (await pdf.getPage(i)).getTextContent();
+    out += c.items.map(x => x.str).join(" ") + "\n";
+  }
+  return out;
+}
+async function docxText(buf) {
+  await loadScript("https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js");
+  return (await mammoth.extractRawText({ arrayBuffer: buf })).value;
+}
+async function imageText(file) { // תמונה -> טקסט בעזרת מודל ראייה של Groq
+  const url = await new Promise((ok, bad) => {
+    const img = new Image(); const r = new FileReader();
+    r.onload = () => { img.src = r.result; }; r.onerror = bad;
+    img.onload = () => { const k = Math.min(1, 1400 / Math.max(img.width, img.height)); const c = document.createElement("canvas");
+      c.width = img.width * k; c.height = img.height * k; c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); ok(c.toDataURL("image/jpeg", 0.85)); };
+    img.onerror = () => bad(new Error("התמונה לא נפתחה"));
+    r.readAsDataURL(file);
+  });
+  const r = await fetch(GROQ + "/chat/completions", {
+    method: "POST", headers: { "Authorization": "Bearer " + settings.key, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "meta-llama/llama-4-scout-17b-16e-instruct", temperature: 0, messages: [{ role: "user", content: [
+      { type: "text", text: "העתק את כל הטקסט שמופיע בתמונה, כולל שאלות, מספרים ונוסחאות, בדיוק כפי שהוא. אם יש ציור או גרף, תאר אותו במשפט. החזר רק את הטקסט." },
+      { type: "image_url", image_url: { url } }] }] }),
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error?.message || ("שגיאה " + r.status));
+  return d.choices[0].message.content;
+}
+async function fileText(file) {
+  const n = file.name.toLowerCase();
+  if (file.type.startsWith("image/")) return imageText(file);
+  const buf = await file.arrayBuffer();
+  if (n.endsWith(".pdf") || file.type === "application/pdf") return pdfText(buf);
+  if (n.endsWith(".docx")) return docxText(buf);
+  return new TextDecoder().decode(buf);
+}
+function linkUrl(u) { // קישורי גוגל -> הכתובת שמחזירה את התוכן
+  let m = u.match(/docs\.google\.com\/(document|presentation|spreadsheets)\/d\/([\w-]+)/);
+  if (m) return m[1] === "spreadsheets" ? `https://docs.google.com/spreadsheets/d/${m[2]}/export?format=csv`
+    : m[1] === "presentation" ? `https://docs.google.com/presentation/d/${m[2]}/export/txt`
+    : `https://docs.google.com/document/d/${m[2]}/export?format=txt`;
+  return u;
+}
+async function linkText(u) {
+  const r = await fetch(linkUrl(u));
+  if (!r.ok) throw new Error("קוד " + r.status);
+  const type = (r.headers.get("content-type") || "").toLowerCase();
+  if (type.includes("pdf")) return pdfText(await r.arrayBuffer());
+  const t = await r.text();
+  if (type.includes("html")) { const doc = new DOMParser().parseFromString(t, "text/html"); doc.querySelectorAll("script,style,noscript").forEach(x => x.remove()); return doc.body.innerText || doc.body.textContent; }
+  return t;
+}
+function renderChips() {
+  $("#chips").innerHTML = attached.map((a, i) => `<div class="chip"><span>${esc(a.name)}</span><button data-i="${i}" aria-label="הסר">×</button></div>`).join("");
+}
+$("#chips").addEventListener("click", e => { const i = e.target.dataset.i; if (i !== undefined) { attached.splice(+i, 1); renderChips(); } });
+$("#attach").onclick = () => { if (!settings.key) { openSettings(); toast("צריך להכניס מפתח Groq"); return; } $("#file").click(); };
+$("#file").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  const wait = sys("קורא את הקובץ " + f.name + "…");
+  try {
+    const t = (await fileText(f) || "").replace(/[ \t]+/g, " ").trim();
+    wait.remove();
+    if (!t) { sys("לא מצאתי טקסט בקובץ " + f.name); return; }
+    attached.push({ name: f.name, text: t.slice(0, LIMIT) }); renderChips();
+    toast("הקובץ מוכן. עכשיו כתוב או אמור מה לעשות איתו");
+  } catch (err) { wait.remove(); sys("לא הצלחתי לקרוא את הקובץ: " + err.message); }
+};
+
 async function ask(userText) {
   if (!settings.key) { openSettings(); toast("צריך להכניס מפתח Groq"); return; }
-  history.push({ role: "user", content: userText }); save("aiHistory", history); renderChat();
+  let full = userText;
+  const files = attached.map(a => a.name);
+  attached.forEach(a => { full += `\n\n--- תוכן הקובץ ${a.name} ---\n${a.text}`; });
+  attached = []; renderChips();
+  const urls = [...new Set((userText.match(/https?:\/\/[^\s<>"')\]]+/g) || []).map(u => u.replace(/[.,;:!?]+$/, "")))].slice(0, 2);
+  for (const u of urls) {
+    const w = sys("פותח את הקישור…");
+    try { const t = (await linkText(u) || "").replace(/[ \t]+/g, " ").trim(); w.remove();
+      if (t) full += `\n\n--- תוכן מהקישור ${u} ---\n${t.slice(0, LIMIT)}`; else throw new Error("ריק"); }
+    catch (e) { w.remove(); full += `\n\n(לא הצלחתי לפתוח את הקישור ${u})`;
+      sys("לא הצלחתי לפתוח את הקישור. אם זה קובץ, הורד אותו וצרף אותו בכפתור האטב. אם זה מסמך גוגל, צריך שיהיה משותף ל\"כל מי שיש לו את הקישור\"."); }
+  }
+  history.push({ role: "user", content: full, show: userText || "(קובץ)", files }); save("aiHistory", history); renderChat();
   const wait = sys("חושב…");
   try {
-    const msgs = [{ role: "system", content: systemPrompt() }, ...history.slice(-16)];
+    const msgs = [{ role: "system", content: systemPrompt() }, ...history.slice(-16).map(m => ({ role: m.role, content: m.content }))];
     const r = await fetch(GROQ + "/chat/completions", {
       method: "POST",
       headers: { "Authorization": "Bearer " + settings.key, "Content-Type": "application/json" },
@@ -287,7 +394,7 @@ async function onStop() {
 }
 $("#mic").onclick = () => { unlockSpeech(); if (rec && rec.state === "recording") stopRec(); else startRec(); };
 
-$("#send").onclick = () => { unlockSpeech(); const t = $("#text").value.trim(); if (!t) return; $("#text").value = ""; ask(t); };
+$("#send").onclick = () => { unlockSpeech(); const t = $("#text").value.trim(); if (!t && !attached.length) return; $("#text").value = ""; ask(t || "פתור את המשימה שבקובץ"); };
 $("#text").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#send").click(); } });
 
 renderChat(); renderTasks();
