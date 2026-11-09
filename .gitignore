@@ -2,3 +2,4 @@
 out/
 pending.json
 __pycache__/
+classroom_token.json
